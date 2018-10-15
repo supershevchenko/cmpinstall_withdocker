@@ -1,0 +1,679 @@
+version: "3.2"
+
+services:
+
+  dbevuser:
+      image: dnhsoft/mysql-utf8:5.7
+     # networks:
+      #  - proxy
+      #command: mysqld --character-set-server=utf8 --collation-server=utf8_unicode_ci
+      expose:
+        - 3306
+      environment:
+        - MYSQL_ROOT_PASSWORD=Pbu4@123
+        - MYSQL_USER=evuser
+        - MYSQL_PASSWORD=Pbu4@123
+        - MYSQL_DATABASE=evuser
+      volumes:
+        - mysqlevuserdata:/var/lib/mysql
+      #restart: always
+      deploy:
+        restart_policy:
+          condition: on-failure
+          delay: 5s
+          window: 120s
+        labels:
+          - com.df.notify=true
+          - com.df.port=3306
+          - com.df.reqMode=tcp
+          #- com.df.srcPort=8543
+          - com.df.sslVerifyNone=true
+      networks:
+        - sxltcmp-dbusernetwork
+
+  dbim:
+    image: dnhsoft/mysql-utf8:5.7
+    # networks:
+    #  - proxy
+    #command: mysqld --character-set-server=utf8 --collation-server=utf8_unicode_ci
+    expose:
+      - 3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=Pbu4@123
+      - MYSQL_USER=im
+      - MYSQL_PASSWORD=Pbu4@123
+      - MYSQL_DATABASE=im
+    volumes:
+      - mysqlimdata:/var/lib/mysql
+    #restart: always
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+      labels:
+        - com.df.notify=true
+        - com.df.port=3306
+        - com.df.reqMode=tcp
+        #- com.df.srcPort=8544
+        - com.df.sslVerifyNone=true
+    networks:
+    - sxltcmp-dbimnetwork
+
+  redis:
+    image: bitnami/redis:latest
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_PASSWORD=HuaweiCMP123.
+    networks:
+      - sxltcmp-network
+  redis-sentinel:
+    image: bitnami/redis-sentinel:latest
+    environment:
+      - REDIS_MASTER_HOST=redis
+      - REDIS_MASTER_PASSWORD=HuaweiCMP123.
+    expose:
+      - 26379
+    networks:
+      - sxltcmp-network
+
+  activemq:
+    image: vromero/activemq-artemis:latest
+    expose:
+      - 61616
+    environment:
+      #ACTIVEMQ_NAME: amq
+      #ACTIVEMQ_REMOVE_DEFAULT_ACCOUNT: 'True'
+      ARTEMIS_USERNAME: cmpimuser
+      ARTEMIS_PASSWORD: HuaweiCMP123.
+    networks:
+      - sxltcmp-network
+
+
+  jobmanager:
+    image: flink:1.5.3
+    expose:
+      - 6123
+      - 8081
+    command: jobmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    networks:
+    - sxltcmp-network
+
+  taskmanager:
+    image: flink:1.5.3
+    expose:
+      - 6121
+      - 6122
+    command: taskmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    networks:
+    - sxltcmp-network
+
+
+  zookeeper:
+    image: 'bitnami/zookeeper:latest'
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+    - sxltcmp-network
+  kafka:
+    image: 'liuganquan/kafka-dockerize:latest'
+    entrypoint: dockerize -wait tcp://zookeeper:2181 -timeout 600s /app-entrypoint.sh
+    command: /run.sh
+    environment:
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    networks:
+    - sxltcmp-network
+
+
+##系统基础服务
+  eveureka1:
+    #build:
+      #context: .
+      #dockerfile: EvEurekaServer/Dockerfile
+    image: 10.143.132.47/sxlt/eveurekaserver
+    entrypoint: dockerize -wait tcp://dbevuser:3306 -wait tcp://dbim:3306 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewEurekaServer-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      sxltcmp-network:
+        aliases:
+          - eveureka
+      sxltcmp-dbusernetwork:
+      sxltcmp-dbimnetwork:
+     # - proxy
+    environment:
+      - config.profile=ha
+      - spring.profiles.active=ha1
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - JAVA_OPTS=-Xmx256m
+    expose:
+      - 8761
+   # depends_on:
+    #  - db
+  eveureka2:
+    #build:
+    #context: .
+    #dockerfile: EvEurekaServer/Dockerfile
+    image: 10.143.132.47/sxlt/eveurekaserver
+    entrypoint: dockerize -wait tcp://dbevuser:3306 -wait tcp://dbim:3306 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewEurekaServer-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+       sxltcmp-network:
+          aliases:
+            - eveureka
+       sxltcmp-dbusernetwork:
+       sxltcmp-dbimnetwork:
+      # - proxy
+    environment:
+      - config.profile=ha
+      - spring.profiles.active=ha2
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - JAVA_OPTS=-Xmx256m
+    expose:
+      - 8761
+    #depends_on:
+    #  - db
+
+  evconfig:
+    #build:
+     # context: .
+     # dockerfile: EvConfigServer/Dockerfile
+    image: 10.143.132.47/sxlt/evconfigserver
+    entrypoint: dockerize -wait tcp://eveureka:8761 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewConfigServer-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    expose:
+      - 8888
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      #- config.profile=native
+      #- config.path=/app/config
+      - spring.cloud.config.server.git.uri=http://10.143.132.5:57990/scm/cmp/guangdong-cmp-config.git
+      - spring.cloud.config.server.git.username=liuganquan
+      - spring.cloud.config.server.git.password=111111
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - JAVA_OPTS=-Xmx256m
+    #volume:
+    #depends_on:
+     # - eveureka1
+     # - eveureka2
+     # - eveureka3
+
+
+##后台服务
+  evtaskengine:
+    #build:
+     # context: .
+     # dockerfile: EvTaskEngine/Dockerfile
+    image: 10.143.132.47/sxlt/evtaskengine
+    entrypoint: dockerize -wait tcp://evconfig:8888 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewTaskEngine-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    expose:
+      - 20881
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.node=control
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - spring.profiles.active=nojms
+      - JAVA_OPTS=-Xmx512m
+    #depends_on:
+     # - evconfig
+  evcmdb:
+    #build:
+    #  context: .
+    #  dockerfile: EvCMDBManager/Dockerfile
+    image: 10.143.132.47/sxlt/evcmdb
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewCMDBManager-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 20883
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.node=control
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx512m
+    #depends_on:
+     # - evtaskengine
+  evi18nserver:
+    #build:
+    #  context: .
+    #  dockerfile: EvI18nServer/Dockerfile
+    image: 10.143.132.47/sxlt/evi18nserver
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewI18nServer-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 20888
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.node=control
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx256m
+    #depends_on:
+     # - evtaskengine
+  evgatherframe:
+    #build:
+    #  context: .
+    #  dockerfile: EvGatherFrame/Dockerfile
+    image: 10.143.132.47/sxlt/evgatherframe
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewGatherFrame-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true
+    expose:
+      - 20882
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.regions=DC1
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - spring.profiles.active=nojms
+      - JAVA_OPTS=-Xmx512m
+    #depends_on:
+      #- evtaskengine
+  evvsphereagent:
+    #build:
+    #  context: .
+    #  dockerfile: EvVSphereAgent/Dockerfile
+    image: 10.143.132.47/sxlt/evvsphereagent
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewVSphereAgent-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 20887
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.regions=DC1
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - spring.profiles.active=nojms
+      - JAVA_OPTS=-Xmx512m
+    #depends_on:
+      #- evtaskengine
+  evvspheremanager:
+    #build:
+    #  context: .
+    #  dockerfile: EvVSphereManage/Dockerfile
+    image: 10.143.132.47/sxlt/evvspheremanager
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewVSphereManage-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 20886
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.node=control
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - spring.profiles.active=nojms
+      - JAVA_OPTS=-Xmx512m
+    #depends_on:
+      #- evtaskengine
+  evalarmcenter:
+    #build:
+     # context: .
+    #  dockerfile: EvAlarmCenter/Dockerfile
+    image: 10.143.132.47/sxlt/evalarmcenter
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewAlarmCenter-1.0.3-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 20885
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.node=control
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - spring.profiles.active=nojms
+      - JAVA_OPTS=-Xmx512m
+    #depends_on:
+      #- evtaskengine
+  evtaskjob:
+    #build:
+    #  context: .
+    #  dockerfile: EvTaskJob/Dockerfile
+    image: 10.143.132.47/sxlt/evtaskjob
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewTaskJob-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 20884
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - eureka.instance.metadataMap.node=control
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx512m
+    #depends_on:
+     # - evtaskengine
+  evservicemonitor:
+    #build:
+    #  context: .
+    #  dockerfile: EvServiceMonitor/Dockerfile
+    image: 10.143.132.47/sxlt/evservicemonitor
+    entrypoint: dockerize -wait tcp://evconfig:8888 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m -Djava.security.egd=file:/dev/./urandom -jar /app/EasyViewServiceMonitor-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 20890
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+      labels:
+        - com.df.notify=true
+        - com.df.port=20890
+        - com.df.reqMode=tcp
+        #- com.df.srcPort=8445
+        - com.df.sslVerifyNone=true
+    networks:
+      - sxltcmp-network
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx256m
+    #depends_on:
+     # - evtaskengine
+  evzuulmanager:
+    #build:
+    #  context: .
+    #  dockerfile: EvServiceMonitor/Dockerfile
+    image: 10.143.132.47/sxlt/evzuulmanager
+    entrypoint: dockerize -wait tcp://evtaskengine:20881 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx256m -Djava.security.egd=file:/dev/./urandom -jar /app/EvZuulManager-0.0.2-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    #ports:
+      #- 20892
+    expose:
+      - 20892
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+      labels:
+        - com.df.notify=true
+        - com.df.port=20892
+        - com.df.reqMode=tcp
+        - com.df.srcPort=21992
+        - com.df.sslVerifyNone=true
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbusernetwork
+      - proxy
+      #- proxy
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - spring.profiles.active=nojms
+      - JAVA_OPTS=-Xmx256m
+
+
+#前台服务
+  evimtask:
+    image: 10.143.132.47/sxlt/evimtask
+    entrypoint: dockerize -wait tcp://evconfig:8888 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/task-server-2.1-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+    - 28085
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbimnetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx512m
+
+  evimthird:
+    image: 10.143.132.47/sxlt/evimthird
+    entrypoint: dockerize -wait tcp://evimtask:28085 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/thirdinterface-server-2.1-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 28086
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+      labels:
+        - com.df.notify=true
+        - com.df.port=28086
+        - com.df.reqMode=tcp
+        - com.df.srcPort=21993
+        - com.df.sslVerifyNone=true
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbimnetwork
+      - proxy
+      #- proxy
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx512m
+
+  evimapiprovider:
+    image: 10.143.132.47/sxlt/evimapiprovider
+    entrypoint: dockerize -wait tcp://evimtask:28085 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/apiprovider-server-2.1-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 28084
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbimnetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx512m
+
+  evimweb:
+    image: 10.143.132.47/sxlt/evimweb
+    entrypoint: dockerize -wait tcp://evimtask:28085 -timeout 600s
+    command: sh -c "java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512m -Djava.security.egd=file:/dev/./urandom -jar /app/im-2.1-SNAPSHOT.jar --thin.root=/app/m2 --thin.offline=true"
+    expose:
+      - 8443
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+    networks:
+      - sxltcmp-network
+      - sxltcmp-dbimnetwork
+    environment:
+      - eureka.host=eveureka
+      - eureka.host.rep=eveureka
+      - config.profile=ha
+      - user.timezone=Iceland
+      - config.label=sxltconfig
+      - spring.cloud.inetutils.preferred-networks=172.30
+      - spring.cloud.config.retry.max-attempts=5
+      - JAVA_OPTS=-Xmx512m
+
+
+
+#监控相关服务
+  zipkin:
+    image: openzipkin/zipkin
+    #container_name: zipkin
+    # Environment settings are defined here https://github.com/openzipkin/zipkin/tree/1.19.0/zipkin-server#environment-variables
+    environment:
+      - STORAGE_TYPE=mem
+      # Uncomment to disable scribe
+      # - SCRIBE_ENABLED=false
+      # Uncomment to enable self-tracing
+      # - SELF_TRACING_ENABLED=true
+      # Uncomment to enable debug logging
+      # - JAVA_OPTS=-Dlogging.level.zipkin=DEBUG
+    expose:
+      # Port used for the Zipkin UI and HTTP Api
+      - 9411
+    networks:
+      - sxltcmp-network
+
+# Uncomment to use the log-data volume
+# volumes:
+#     log-data:
+#         driver: local
+
+
+networks:
+  sxltcmp-network:
+    external: true
+  sxltcmp-dbusernetwork:
+    external: true
+  sxltcmp-dbimnetwork:
+    external: true
+  proxy:
+    external: true
+
+volumes:
+  mysqlevuserdata:
+    external: false
+  mysqlimdata:
+    external: false

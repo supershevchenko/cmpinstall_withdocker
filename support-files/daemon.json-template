@@ -1,0 +1,5 @@
+{
+  "storage-driver": "overlay2",
+  "insecure-registries": ["${local_registory}"],
+  "registry-mirrors": ["https://2r56lg5f.mirror.aliyuncs.com"]
+}

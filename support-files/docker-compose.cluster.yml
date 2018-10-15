@@ -1,0 +1,208 @@
+version: "3.2"
+
+services:
+  dbevuserboot:
+    image: liuganquan/percona-xtradb-cluster-utf8:5.7
+    command: --pxc_strict_mode=PERMISSIVE --skip-name-resolve --character-set-server=utf8 --collation-server=utf8_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: Pbu4@123
+      CLUSTER_NAME: galera-evuser
+      MYSQL_DATABASE: evuser
+      MYSQL_USER: evuser
+      MYSQL_PASSWORD: Pbu4@123
+      XTRABACKUP_PASSWORD: Pbu4@123
+    expose:
+      - 3306
+    volumes:
+      - mysqlevuserbootclusterdata:/var/lib/mysql
+    networks:
+       sxltcmp-dbusernetwork:
+         aliases:
+          - dbevuser
+
+  dbevuser:
+    image: liuganquan/percona-xtradb-cluster-utf8:5.7
+    entrypoint: dockerize -wait tcp://dbevuserboot:3306 -timeout 600s /entrypoint.sh
+    command: --pxc_strict_mode=PERMISSIVE --skip-name-resolve --character-set-server=utf8 --collation-server=utf8_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: Pbu4@123
+      CLUSTER_NAME: galera-evuser
+      CLUSTER_JOIN: dbevuserboot,dbevuser
+      MYSQL_DATABASE: evuser
+      MYSQL_USER: evuser
+      MYSQL_PASSWORD: Pbu4@123
+      XTRABACKUP_PASSWORD: Pbu4@123
+    expose:
+      - 3306
+    volumes:
+      - mysqlevuserclusterdata:/var/lib/mysql
+    networks:
+       sxltcmp-dbusernetwork:
+         aliases:
+          - dbevuser
+    deploy:
+      mode: replicated
+      replicas: 0
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+
+  dbimboot:
+    image: liuganquan/percona-xtradb-cluster-utf8:5.7
+    command: --pxc_strict_mode=PERMISSIVE --skip-name-resolve --character-set-server=utf8 --collation-server=utf8_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: Pbu4@123
+      CLUSTER_NAME: galera-im
+      MYSQL_DATABASE: im
+      MYSQL_USER: im
+      MYSQL_PASSWORD: Pbu4@123
+      XTRABACKUP_PASSWORD: Pbu4@123
+    expose:
+      - 3306
+    volumes:
+      - mysqlimbootclusterdata:/var/lib/mysql
+    networks:
+     sxltcmp-dbimnetwork:
+       aliases:
+         - dbim
+
+  dbim:
+    image: liuganquan/percona-xtradb-cluster-utf8:5.7
+    command: --pxc_strict_mode=PERMISSIVE --skip-name-resolve --character-set-server=utf8 --collation-server=utf8_general_ci
+    entrypoint: dockerize -wait tcp://dbimboot:3306 -timeout 600s /entrypoint.sh
+    environment:
+      MYSQL_ROOT_PASSWORD: Pbu4@123
+      CLUSTER_NAME: galera-im
+      CLUSTER_JOIN: dbimboot,dbim
+      MYSQL_DATABASE: im
+      MYSQL_USER: im
+      MYSQL_PASSWORD: Pbu4@123
+      XTRABACKUP_PASSWORD: Pbu4@123
+      SERVICE_PORTS: 3306
+    expose:
+      - 3306
+    volumes:
+      - mysqlimclusterdata:/var/lib/mysql
+    networks:
+     sxltcmp-dbimnetwork:
+       aliases:
+         - dbim
+    deploy:
+      mode: replicated
+      replicas: 0
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+
+  redis:
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_REPLICATION_MODE=master
+      - REDIS_PASSWORD=HuaweiCMP123.
+    volumes:
+      - redis_master:/bitnami
+    deploy:
+      mode: replicated
+      replicas: 1
+  redis-slave:
+    image: bitnami/redis:latest
+    environment:
+      - REDIS_REPLICATION_MODE=slave
+      - REDIS_MASTER_HOST=redis
+      #- REDIS_MASTER_PORT_NUMBER=6379
+      - REDIS_MASTER_PASSWORD=HuaweiCMP123.
+      - REDIS_PASSWORD=HuaweiCMP123.
+    volumes:
+      - redis_slave:/bitnami
+    networks:
+      - sxltcmp-network
+    deploy:
+      mode: replicated
+      replicas: 3
+  redis-sentinel:
+    environment:
+      - REDIS_MASTER_HOST=redis
+      - REDIS_MASTER_PASSWORD=HuaweiCMP123.
+    expose:
+      - 26379
+    deploy:
+      mode: replicated
+      replicas: 3
+
+  mongodb:
+    image: bitnami/mongodb:latest
+    environment:
+      - MONGODB_USERNAME=evuser
+      - MONGODB_PASSWORD=Pbu4@123
+      - MONGODB_ROOT_PASSWORD=Pbu4@123
+      - MONGODB_DATABASE=collectDataDB
+      - MONGODB_REPLICA_SET_MODE=primary
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+    volumes:
+      - mongodb_master_data:/bitnami
+    networks:
+      - sxltcmp-network
+
+
+  mongodb-secondary:
+    image: bitnami/mongodb:latest
+    environment:
+      - MONGODB_REPLICA_SET_MODE=secondary
+      - MONGODB_PRIMARY_HOST=mongodb
+      - MONGODB_PRIMARY_ROOT_PASSWORD=Pbu4@123
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+    networks:
+      - sxltcmp-network
+
+  mongodb-arbiter:
+    image: bitnami/mongodb:latest
+    environment:
+      - MONGODB_REPLICA_SET_MODE=arbiter
+      - MONGODB_PRIMARY_HOST=mongodb
+      - MONGODB_PRIMARY_ROOT_PASSWORD=Pbu4@123
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+    networks:
+      - sxltcmp-network
+
+  taskmanager:
+    deploy:
+      mode: replicated
+      replicas: 3
+
+  kafka:
+    deploy:
+      mode: replicated
+      replicas: 3
+      
+  evtaskengine:
+    environment:
+      - isUsedMongoDB=true
+
+  evalarmcenter:
+    environment:
+      - isUsedMongoDB=true
+
+  evcmdb:
+    environment:
+      - isUsedMongoDB=true
+
+  evtaskjob:
+    environment:
+      - isUsedMongoDB=true
+
+  evzuulmanager:
+    environment:
+      - isUsedMongoDB=true
+
+volumes:
+  redis_master:
+  redis_slave:
+  mongodb_master_data:
+  etcd-00vol:
+  etcd-01vol:
+  mysqlevuserclusterdata:
+  mysqlimclusterdata:
+  mysqlevuserbootclusterdata:
+  mysqlimbootclusterdata:
