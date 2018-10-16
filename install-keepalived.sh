@@ -83,11 +83,15 @@ install_keepalived(){
                         echo "Only support Centos and Ubutu Operating System"
                         exit 98
                 fi
-                scp ./support-files/monitor-service.sh $i:/usr/bin/
-                ssh -n $i \cp /tmp/keepalived.conf /etc/keepalived/
-                echo "$i:Start keepalived service."
-                ssh -n $i systemctl restart keepalived
-                ssh -n $i systemctl enable keepalived
+                scp ./support-files/monitor-service.sh $i:/usr/local/bin/
+               	echo "$i:Start keepalived service."
+		ssh -Tq $i <<EOF
+                	cat /tmp/keepalived.conf > /etc/keepalived/
+			chmod +x /usr/local/bin/monitor-service.sh
+                	systemctl restart keepalived
+                	systemctl enable keepalived
+		exit
+EOF
         done
 }
 
